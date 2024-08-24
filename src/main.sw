@@ -25,9 +25,9 @@ configurable {
     /// The decimals of the asset minted by this contract.
     DECIMALS: u8 = 9u8,
     /// The name of the asset minted by this contract.
-    NAME: str[7] = __to_str_array("MyAsset"),
+    NAME: str[13] = __to_str_array("Constellation"),
     /// The symbol of the asset minted by this contract.
-    SYMBOL: str[3] = __to_str_array("TES"),
+    SYMBOL: str[3] = __to_str_array("CON"),
 
     ADMIN: Identity = Identity::Address(Address::from(0x3b8726d7b9c9c659c3d51f29b636c40a70a039c9b0b2b2a376e93da0d334a93a)),
     TOTALMINT: u64 = 10000000000000000000,

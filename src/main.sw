@@ -2,23 +2,32 @@ contract;
 
 abi Token {
     #[storage(read, write)]
-    fn setContract(_indentity: Identity);
+    fn set_contract(_indentity: Identity);
 
     #[storage(read)]
-    fn getAssetId() -> AssetId;
+    fn get_asset_id() -> AssetId;
 }
 
-use standards::{src20::SRC20, src3::SRC3};
+use standards::{
+    src20::{
+        SetDecimalsEvent,
+        SetNameEvent,
+        SetSymbolEvent,
+        SRC20,
+        TotalSupplyEvent,
+    },
+    src3::SRC3,
+};
 use std::{
     asset::{
         burn,
         mint_to,
     },
+    auth::msg_sender,
     call_frames::msg_asset_id,
     constants::DEFAULT_SUB_ID,
     context::msg_amount,
     string::String,
-    auth::msg_sender,
 };
 
 configurable {
@@ -28,16 +37,9 @@ configurable {
     NAME: str[13] = __to_str_array("Constellation"),
     /// The symbol of the asset minted by this contract.
     SYMBOL: str[3] = __to_str_array("CON"),
-
     ADMIN: Identity = Identity::Address(Address::from(0x3b8726d7b9c9c659c3d51f29b636c40a70a039c9b0b2b2a376e93da0d334a93a)),
     TOTALMINT: u64 = 10000000000000000000,
 }
-
-enum AuthorizationError {
-    SenderNotOwner: (),
-    AmountNotAllow: (),
-}
-
 
 storage {
     /// The total supply of the asset minted by this contract.
@@ -45,21 +47,19 @@ storage {
     contract_owner: Identity = Identity::ContractId(ContractId::from(0x3b8726d7b9c9c659c3d51f29b636c40a70a039c9b0b2b2a376e93da0d334a93a)),
 }
 
-// DEFAULT_SUB_ID = 0x0000000000000000000000000000000000000000000000000000000000000000
-
 impl Token for Contract {
 
     #[storage(read, write)]
-    fn setContract(_indentity: Identity){
+    fn set_contract(_indentity: Identity){
         require(
             msg_sender().unwrap() == ADMIN, 
-            AuthorizationError::SenderNotOwner,
+            "Not admin",
         );
         storage.contract_owner.write(_indentity);
     }
 
     #[storage(read)]
-    fn getAssetId() -> AssetId{
+    fn get_asset_id() -> AssetId{
         AssetId::default()
     }
 }
@@ -67,24 +67,35 @@ impl Token for Contract {
 impl SRC3 for Contract {
     
     #[storage(read, write)]
-    fn mint(recipient: Identity, sub_id: SubId, amount: u64) {
+    fn mint(recipient: Identity, sub_id: Option<SubId>, amount: u64) {
+        require(
+            sub_id
+                .is_some() && sub_id
+                .unwrap() == DEFAULT_SUB_ID,
+            "Incorrect Sub Id",
+        );
+
         require(
             msg_sender().unwrap() == storage.contract_owner.read(), 
-            AuthorizationError::SenderNotOwner,
+            "Sender Not Owner",
         );
-        require(sub_id == DEFAULT_SUB_ID, "Incorrect Sub Id");
+
         require(
             (amount + storage.total_supply.read()) <= TOTALMINT,
-            AuthorizationError::AmountNotAllow,
+            "Amount Not Allow",
         );
+
         // Increment total supply of the asset and mint to the recipient.
-        storage
-            .total_supply
-            .write(amount + storage.total_supply.read());
+        let new_supply = amount + storage.total_supply.read();
+        storage.total_supply.write(new_supply);
+
         mint_to(recipient, DEFAULT_SUB_ID, amount);
+
+        // TotalSupplyEvent::new(AssetId::default(), new_supply, msg_sender().unwrap())
+        //     .log();
     }
 
-   
+    
     #[payable]
     #[storage(read, write)]
     fn burn(sub_id: SubId, amount: u64) {
@@ -96,13 +107,14 @@ impl SRC3 for Contract {
         );
 
         // Decrement total supply of the asset and burn.
-        storage
-            .total_supply
-            .write(storage.total_supply.read() - amount);
+        let new_supply = storage.total_supply.read() - amount;
+        storage.total_supply.write(new_supply);
+
         burn(DEFAULT_SUB_ID, amount);
+
+        TotalSupplyEvent::new(AssetId::default(), new_supply, msg_sender().unwrap())
+            .log();
     }
-    //need to check the function 
-    //already check
 }
 
 // SRC3 extends SRC20, so this must be included
@@ -146,5 +158,23 @@ impl SRC20 for Contract {
         } else {
             None
         }
+    }
+}
+
+abi EmitSRC20Events {
+    fn emit_src20_events();
+}
+
+impl EmitSRC20Events for Contract {
+    fn emit_src20_events() {
+        // Metadata that is stored as a configurable should only be emitted once.
+        let asset = AssetId::default();
+        let sender = msg_sender().unwrap();
+        let name = Some(String::from_ascii_str(from_str_array(NAME)));
+        let symbol = Some(String::from_ascii_str(from_str_array(SYMBOL)));
+
+        SetNameEvent::new(asset, name, sender).log();
+        SetSymbolEvent::new(asset, symbol, sender).log();
+        SetDecimalsEvent::new(asset, DECIMALS, sender).log();
     }
 }
